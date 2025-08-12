@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket STOMP Test</title>
+    <script src="sockjs.min.js"></script>
+    <script src="stomp.umd.min.js"></script>
+</head>
+<body>
+<h1>WebSocket STOMP Test Client</h1>
+<div>
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
+</div>
+<hr>
+<div>
+    <label for="sessionId">Session ID to Subscribe/Send to:</label>
+    <input type="text" id="sessionId" value="1">
+</div>
+<div>
+    <button id="subscribeBtn" disabled>Subscribe to Session</button>
+    <button id="sendBtn" disabled>Send Message</button>
+</div>
+<hr>
+<h3>Server Logs:</h3>
+<div id="logs" style="border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; background: #f9f9f9;"></div>
+
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const subscribeBtn = document.getElementById('subscribeBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const sessionIdInput = document.getElementById('sessionId');
+    const logDiv = document.getElementById('logs');
+
+    let stompClient = null;
+
+    function log(message) {
+        const p = document.createElement('p');
+        p.style.margin = '0';
+        p.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logDiv.appendChild(p);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function connect() {
+        log('Attempting to connect...');
+        const socket = new SockJS('http://localhost:8080/ws');
+        stompClient = new StompJs.Client({
+            webSocketFactory: () => socket,
+            debug: (str) => {
+                log(str); // This will print all STOMP frames to our log area
+            },
+        });
+
+        stompClient.onConnect = (frame) => {
+            log('Connection successful!');
+            log(`Connected: ${frame}`);
+            connectBtn.disabled = true;
+            disconnectBtn.disabled = false;
+            subscribeBtn.disabled = false;
+        };
+
+        stompClient.onStompError = (frame) => {
+            log(`Broker reported error: ${frame.headers['message']}`);
+            log(`Error details: ${frame.body}`);
+        };
+
+        stompClient.activate();
+    }
+
+    function subscribe() {
+        if (!stompClient || !stompClient.connected) {
+            log('Cannot subscribe, client not connected.');
+            return;
+        }
+        const sessionId = sessionIdInput.value;
+        log(`Subscribing to /topic/sessions/${sessionId}...`);
+        stompClient.subscribe(`/topic/sessions/${sessionId}`, (message) => {
+            log(`Message received: ${message.body}`);
+        });
+        log('Subscription request sent.');
+        sendBtn.disabled = false;
+    }
+
+    function sendMessage() {
+        if (!stompClient || !stompClient.connected) {
+            log('Cannot send, client not connected.');
+            return;
+        }
+        const sessionId = sessionIdInput.value;
+        const destination = `/app/chat/${sessionId}/sendMessage`;
+        const payload = {
+            sender: 'testuser',
+            content: 'Hello from the browser!'
+        };
+
+        log(`Sending message to ${destination}...`);
+        // Stomp.js handles framing and the NULL terminator automatically
+        stompClient.publish({
+            destination: destination,
+            body: JSON.stringify(payload)
+        });
+        log('Message sent.');
+    }
+
+    function disconnect() {
+        if (stompClient !== null) {
+            stompClient.deactivate();
+        }
+        log("Disconnected.");
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+        subscribeBtn.disabled = true;
+        sendBtn.disabled = true;
+    }
+
+    connectBtn.addEventListener('click', connect);
+    disconnectBtn.addEventListener('click', disconnect);
+    subscribeBtn.addEventListener('click', subscribe);
+    sendBtn.addEventListener('click', sendMessage);
+</script>
+</body>
+</html>
